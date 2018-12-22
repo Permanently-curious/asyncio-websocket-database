@@ -1,0 +1,321 @@
+//
+//Made by Pav and Amalie
+//
+// inspired by
+// https://websockets.readthedocs.io/en/stable/intro.html?fbclid=IwAR2_W-njALpBXEb0rBbuJm569C817E4_gf0R2p2ewJVhWPwXQGQNAevW7cM
+//  - WS server example with synchronization of state
+//
+
+<!DOCTYPE html>
+<html>
+    <head>
+        <title>WebSocket demo</title>
+        <style type="text/css">
+            body {
+                font-family: "Courier New", sans-serif;
+
+            }
+            .buttons {
+                font-size: 1em;
+                display: flex;
+                justify-content: center;
+                text-align: center;
+            }
+            .button, .connc {
+                line-height: 1;
+                padding: 2rem;
+                margin: 2rem;
+                border: medium solid;
+                min-height: 1em;
+                min-width: 1em;
+            }
+            .button {
+                cursor: pointer;
+                user-select: none;
+            }
+            .alarm {
+                color: black;
+            }
+
+            .deactivate {
+              color: green;
+            }
+
+            .battery {
+                color: green;
+            }
+            .state {
+                text-align: center;
+                font-size: 1em;
+                font-weight: 900;
+            }
+            .table, th, td {
+            border:1px solid black;
+            }
+
+            /* The Modal (background) */
+            .modal {
+              display: none; /* Hidden by default */
+              position: fixed; /* Stay in place */
+              z-index: 1; /* Sit on top */
+              left: 0;
+              top: 0;
+              width: 100%; /* Full width */
+              height: 100%; /* Full height */
+              overflow: auto; /* Enable scroll if needed */
+              background-color: rgb(0,0,0); /* Fallback color */
+              background-color: rgba(0,0,0,0.4); /* Black w/ opacity */
+            }
+
+            /* Modal Content/Box */
+            .modal-content {
+              background-color: #fefefe;
+              margin: 15% auto; /* 15% from the top and centered */
+              padding: 20px;
+              border: 1px solid #888;
+              width: 30%; /* Could be more or less, depending on screen size */
+              text-align: center;
+            }
+
+            /* The Close Button */
+            .close {
+              color: #aaa;
+              float: right;
+              font-size: 28px;
+              font-weight: bold;
+            }
+
+            .close:hover,
+            .close:focus {
+              color: black;
+              text-decoration: none;
+              cursor: pointer;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="buttons">
+            <div class="alarm button">Alarm</div>
+            <div class="battery button">Batteriniveau: Opladet</div>
+            <div class="deactivate button">Deaktiver alarmering</div>
+            <div class="setup button" id="popup">Indtast enhed</div>
+        </div>
+        <div id="myModal" class="modal">
+          <div class="modal-content">
+            <span class="close">&times;</span>
+            <h1>Indtast information</h1>
+            <form class="deviceform" id="deviceform" action="" method="post">
+              Enheds ID: <br>
+              <input type="text" id="deviceid" name="deviceid" required>
+              <br>
+              L&aeligngdegrad: <br>
+              <input type="text" id="longitude" name="longitude" required>
+              <br>
+              Breddegrad:
+              <br>
+              <input type="text" id="latitude" name="latitude" required>
+              <br>
+              <br>
+              <input type="submit" value="Send" id="submit">
+            </form>
+          </div>
+        </div>
+        <script>
+          var modal = document.getElementById("myModal");
+          var btn = document.getElementById("popup");
+          var span = document.getElementsByClassName("close")[0];
+
+          btn.onclick = function() {
+            modal.style.display = "block";
+          }
+
+          span.onclick = function () {
+            modal.style.display = "none";
+          }
+
+          window.onclick = function(event) {
+            if (event.target == modal) {
+              modal.style.display = "none";
+            }
+          }
+        </script>
+        <div class="state">
+            Brugere online: <span class="users">?</span>
+        </div>
+        <div class="state">
+            Centralenhed 1:
+        </div>
+        <table align="center" id="devicetable">
+              <tr>
+                <th>Detektionsenhed # </th>
+                <th>L&aeligngdegrad</th>
+                <th>Breddegrad</th>
+                <th>Sidst opdateret</th>
+              </tr>
+        </table>
+        <script>
+            // variabler der vælger HTML classes
+            var alarm = document.querySelector(".alarm"),
+                battery = document.querySelector(".battery"),
+                users = document.querySelector(".users"),
+                units = document.querySelector(".units"),
+                deactivate = document.querySelector(".deactivate"),
+                submit = document.querySelector("#submit"),
+                websocket = new WebSocket("ws://127.0.0.1:6789/");
+
+            deactivate.onclick = function (event)
+            {
+                if (deactivate.innerHTML === "Deaktiver alarmering") 
+                {
+                  deactivate.innerHTML = "Aktiver alarmering";
+                  deactivate.style.color = "red";
+                } 
+                else 
+                {
+                  deactivate.innerHTML = "Deaktiver alarmering";
+                  deactivate.style.color = "green";
+                }
+                //change color on button
+            }
+            
+            battery.onclick = function (event)
+            {
+                  battery.textContent = "Batteriniveau: Opladet";
+                  battery.style.color = "green";
+                
+                //change color on button
+            }
+
+            // funtion der tager info fra formular og eksporterer som json
+            submit.onclick = function() {
+            var elements = document.getElementById("deviceform").elements;
+            var timestamp = new Date()
+            var obj = {"action": "new_device", "last_update": timestamp};
+
+            for (var i=0; i < 3; i++) { // hvert formular felt (de første 3)
+              var item = elements.item(i);
+              obj[item.name] = item.value;
+            }
+            console.log(JSON.stringify(obj));
+            websocket.send(JSON.stringify(obj));
+            }
+
+
+            websocket.onmessage = function (event) {
+                data = JSON.parse(event.data);
+                console.log(data)
+                switch (data.type) {
+
+                    case "users":
+                        users.textContent = (
+                            data.count.toString() + " user" +
+                            (data.count == 1 ? "" : "s"));
+                        break;
+
+                    case "alarm":
+                        if (deactivate.innerHTML === "Deaktiver alarmering") 
+                        {
+                            console.log("alarm")
+                            alarm.style.color = "red"
+                            //let latitudeplacering = data.latitude;
+                            //let longitudeplacering = data.longitude;
+                            //console.log(latitudeplacering)
+                            alert("!!!!!ALARM!!!!!\nAlarm er detekteret ved ID:" + data.id + " \nLatitude: " +data.latitude + " Longitude: " + data.longitude )
+                        } 
+                        else 
+                        {
+                            console.log("alarmering er OFF")
+                            //deactivate.innerHTML = "Deaktiver alarmering";
+                            //deactivate.style.color = "red";
+                        }
+                            break;
+                        
+                    case "alarmFake":
+                        if (deactivate.innerHTML === "Deaktiver alarmering") 
+                        {
+                            console.log("alarmFake")
+                            alarm.style.color = "red"
+                            alert("ALARM!\nID kunne ikke verificeres, lokation ukendt.")
+                        } 
+                        else 
+                        {
+                            console.log("alarmering er OFF")
+                            //deactivate.innerHTML = "Deaktiver alarmering";
+                            //deactivate.style.color = "red";
+                        }
+                        
+                        break;
+
+                    case "battery":
+                        battery.style.color = "red"
+                        console.log(+data.latitude)
+                        battery.textContent = "Batteriniveau: Lavt, Enhed: "+data.id // +"Placering er Lat:" + data.latitude +" Long:" +data.longitude
+                        break;
+
+                    case "info":
+                     
+                        function tableNewDevice() {
+                          var table = document.getElementById("devicetable");
+
+
+                          for (i = 0; i < data.detectors.length; i++) 
+                          {
+                            var row = table.insertRow(-1);
+                            var cell1 = row.insertCell(0);
+                            var cell2 = row.insertCell(1);
+                            var cell3 = row.insertCell(2);
+                            var cell4 = row.insertCell(3);
+
+                            cell1.textContent = data.detectors[i].Id;
+                            cell2.textContent = data.detectors[i].Longitude;
+                            cell3.textContent = data.detectors[i].Latitude;
+                            cell4.textContent = data.detectors[i].Timestamp;
+                            }
+
+                        }
+                         function removeTable() 
+                         {
+                            var tableHeaderRowCount = 1;
+                            var table = document.getElementById("devicetable");
+                            var rowCount = table.rows.length;
+                            for (var i = tableHeaderRowCount; i < rowCount; i++) 
+                            {
+                             table.deleteRow(tableHeaderRowCount)
+                          
+                            }
+                         }
+                        removeTable();
+                        tableNewDevice();
+
+                    case "units":
+
+                        break;
+                        
+                    case "noLife":
+                        if (deactivate.innerHTML === "Deaktiver alarmering") 
+                        {
+                            console.log("intetLiv")
+                            alarm.style.color = "black"
+                            //let latitudeplacering = data.latitude;
+                            //let longitudeplacering = data.longitude;
+                            //console.log(latitudeplacering)
+                            alert("Intet livstegn fra enhed\nEnhed :"+data.id+" \nLatitude: " +data.latitude + " Longitude: " + data.longitude )
+                        } 
+                        else 
+                        {
+                            console.log("alarmering er OFF")
+                            //deactivate.innerHTML = "Deaktiver alarmering";
+                            //deactivate.style.color = "red";
+                        }
+                            break;
+
+                    default:
+                        console.error(
+                            "unsupported event", data);
+                
+                        
+                }
+            };
+        </script>
+    </body>
+</html>
